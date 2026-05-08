@@ -11,6 +11,7 @@ PLAYER_BLUE = (0, 110, 255)
 
 WIDTH = 960
 HEIGHT = 540
+ARENA_BOUNDARY = 650
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -18,6 +19,10 @@ screen.fill(WHITE)
 pygame.display.set_caption("Dieflow")
 
 # CLASSES ===============================================================
+
+# TODO: Make bullets shoot automatically when hold down mouse
+# TODO: Implement upgrades: More bullets, faster bullet, more bullet damage
+
 
 class Entity():
     @abstractmethod
@@ -28,10 +33,20 @@ class Entity():
     def draw():
         pass
 
+class UpgradeScreen(Entity):
+    def __init__(self):
+        self.bg_colour = GREY
+
+    def update(self):
+        pass
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, self.bg_colour, (ARENA_BOUNDARY,0,WIDTH-ARENA_BOUNDARY, HEIGHT))
 
 class Bullet(Entity):
     def __init__(self, pos, direction, speed=7, radius=5, colour=BLACK):
         self.pos = pygame.Vector2(pos)
+        self.speed = speed
         self.vel = pygame.Vector2(direction)*speed
         self.radius = radius
         self.colour = colour
@@ -43,7 +58,7 @@ class Bullet(Entity):
         pygame.draw.circle(surface, self.colour, self.pos, self.radius)
     
     def off_screen(self):
-        return (self.pos.x < 0 or self.pos.x > WIDTH or self.pos.y < 0 or self.pos.y > HEIGHT)
+        return (self.pos.x < 0 or self.pos.x > ARENA_BOUNDARY-self.speed or self.pos.y < 0 or self.pos.y > HEIGHT)
 
 class Player(Entity):
     def __init__(self, radius=10, thickness=1, max_speed=6, accel=0.5, friction=0.9):
@@ -87,7 +102,7 @@ class Player(Entity):
 
         # Inner min ensures x/y position does not go beyond one end of screen
         # Outer max ensures x/y position does not go beyond the other end of screen
-        self.pos.x = max(self.radius, min(WIDTH - self.radius, self.pos.x))
+        self.pos.x = max(self.radius, min(ARENA_BOUNDARY - self.radius, self.pos.x))
         self.pos.y = max(self.radius, min(HEIGHT - self.radius, self.pos.y))
 
         mouse_pos = pygame.mouse.get_pos()
@@ -125,7 +140,8 @@ class Player(Entity):
 def main():
     clock = pygame.time.Clock()
     player = Player()
-    entities = [player]
+    upgrade_screen = UpgradeScreen()
+    entities = [player,upgrade_screen]
 
     running = True
     while running:
