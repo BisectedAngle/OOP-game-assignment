@@ -13,6 +13,8 @@ WIDTH = 960
 HEIGHT = 540
 ARENA_BOUNDARY = 650
 
+path = "src/assets/"
+
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 screen.fill(WHITE)
@@ -20,9 +22,10 @@ pygame.display.set_caption("Dieflow")
 
 # CLASSES ===============================================================
 
-# TODO: Make bullets shoot automatically when hold down mouse
-# TODO: Implement upgrades: More bullets, faster bullet, more bullet damage
+# TODO: Implement upgrades: More bullets, more bullet damage
+#       Right now make more bullets. Also how would cannon look?
 
+# TODO: Make game pause when mouse on the upgrade screen
 
 class Entity():
     @abstractmethod
@@ -61,11 +64,13 @@ class Bullet(Entity):
         return (self.pos.x < 0 or self.pos.x > ARENA_BOUNDARY-self.speed or self.pos.y < 0 or self.pos.y > HEIGHT)
 
 class Player(Entity):
-    def __init__(self, radius=10, thickness=1, max_speed=6, accel=0.5, friction=0.9):
+    def __init__(self, radius=10, thickness=1, max_speed=6, accel=0.5, friction=0.9, 
+                 level=1, last_shoot_time=0, shoot_delay=400):
         self.radius = radius
         self.fill = PLAYER_BLUE
         self.outline = BLACK
         self.thickness = thickness
+        self.level = level
         
         # Movement parameters
         # We have velocity, not just speed. This is to ensure smooth sliding movement!
@@ -76,11 +81,27 @@ class Player(Entity):
         self.friction = friction
 
         # Cannon properties
+        self.cannon_image = pygame.image.load(path+"stg1_cannon.png").convert_alpha()
         self.cannon_size = (20,10)
+        self.cannon_image = pygame.transform.scale(self.cannon_image, self.cannon_size)
+
         self.cannon_fill = GREY
         self.angle = 0
+        self.last_shoot_time = last_shoot_time
+        self.shoot_delay = shoot_delay
     
+    def upgradeManage(self):
+        if self.level >= 10 and self.level < 20:
+            self.cannon_image = pygame.image.load(path+"stg2_cannon.png").convert_alpha()
+            self.cannon_size = (20,30)
+        if self.level >= 20:
+            self.cannon_image = pygame.image.load(path+"stg3_cannon.png").convert_alpha()
+            self.cannon_size = (20,35)
+        
+        self.cannon_image = pygame.transform.scale(self.cannon_image, self.cannon_size)
+
     def update(self):
+        # CONTROL MOVEMENT ==========================================
         keys = pygame.key.get_pressed()
         if keys[pygame.K_a]:
             self.vel.x -= self.accel
@@ -105,27 +126,33 @@ class Player(Entity):
         self.pos.x = max(self.radius, min(ARENA_BOUNDARY - self.radius, self.pos.x))
         self.pos.y = max(self.radius, min(HEIGHT - self.radius, self.pos.y))
 
+        # CONTROL AIMING =====================================================
         mouse_pos = pygame.mouse.get_pos()
         direction = pygame.Vector2(mouse_pos) - self.pos
         self.angle = math.atan2(direction.y, direction.x)        
     
     def shoot(self):
-        # Get the starting position of the bullet via trigonometry
-        dir_vector = pygame.Vector2(math.cos(self.angle),math.sin(self.angle))
-        bullet_pos = self.pos + dir_vector * self.cannon_size[0]
+        current_time = pygame.time.get_ticks()
 
-        # Instantiate a bullet
-        return Bullet(bullet_pos, dir_vector)
+        if current_time - self.last_shoot_time >= self.shoot_delay:
+            self.last_shoot_time = current_time
+
+            # Get the starting position of the bullet via trigonometry
+            dir_vector = pygame.Vector2(math.cos(self.angle),math.sin(self.angle))
+            bullet_pos = self.pos + dir_vector * self.cannon_size[0]
+
+            # Instantiate a bullet
+            return Bullet(bullet_pos, dir_vector)
+
+        return None
 
     def draw(self, surface):
         # Creating a surface for the cannon so it can be easily rotated
-        cannon_surface = pygame.Surface(self.cannon_size, pygame.SRCALPHA)
-        pygame.draw.rect(cannon_surface, self.cannon_fill, (0,0,*self.cannon_size))
-        rotated_cannon = pygame.transform.rotate(cannon_surface, -math.degrees(self.angle))
+        rotated_cannon = pygame.transform.rotate(self.cannon_image, -math.degrees(self.angle))
 
         # Offsetting the cannon centre so it protrudes on one side of the player
         dir_vector = pygame.Vector2(math.cos(self.angle),math.sin(self.angle))
-        offset_pos = self.pos + dir_vector * (self.cannon_size[0]//2)
+        offset_pos = self.pos + dir_vector * (self.cannon_size[0]//3)
 
         # Blit the rotated cannon on screen
         rect = rotated_cannon.get_rect(center=offset_pos)
@@ -143,6 +170,10 @@ def main():
     upgrade_screen = UpgradeScreen()
     entities = [player,upgrade_screen]
 
+    player.level = 20
+    player.upgradeManage()
+
+    # GAME LOOP ================================
     running = True
     while running:
         dt = clock.tick(60)/1000
@@ -150,18 +181,23 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                entities.append(player.shoot())
         
+        # GET MOUSE INPUTS ===================================
+        mouse_buttons = pygame.mouse.get_pressed()
+        if mouse_buttons[0]:
+            entities.append(player.shoot())
+            
+        # DRAW + UPDATE ALL ENTITIES ===========================
         screen.fill(WHITE)
         for entity in entities:
-            entity.update()
-            entity.draw(screen)
+            if entity:
+                entity.update()
+                entity.draw(screen)
 
-            # Remove bullet from entity list if it is off screen to conserve memory 
-            if isinstance(entity, Bullet):
-                if entity.off_screen():
-                    entities.remove(entity)
+                # Remove bullet from entity list if it is off screen to conserve memory 
+                if isinstance(entity, Bullet):
+                    if entity.off_screen():
+                        entities.remove(entity)
 
         pygame.display.flip() 
 
