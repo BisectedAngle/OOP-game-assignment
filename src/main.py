@@ -11,7 +11,8 @@ PLAYER_BLUE = (0, 110, 255)
 
 WIDTH = 960
 HEIGHT = 540
-ARENA_BOUNDARY = 650
+ARENA_BOUNDARY_WIDTH = 680
+ARENA_BOUNDARY_HEIGHT = 480
 
 path = "src/assets/"
 
@@ -23,7 +24,7 @@ pygame.display.set_caption("Dieflow")
 # CLASSES ===============================================================
 
 # TODO: Implement upgrades: More bullets, more bullet damage
-#       Right now make more bullets. Also how would cannon look?
+#       Right now make more bullets.
 
 # TODO: Make game pause when mouse on the upgrade screen
 
@@ -39,12 +40,30 @@ class Entity():
 class UpgradeScreen(Entity):
     def __init__(self):
         self.bg_colour = GREY
+        self.shot_amount = 1
+        self.bullet_speed = 1
+        self.shot_delay = 1
+        self.shot_damage = 1
+        self.max_speed = 1
+        self.defense = 1
 
     def update(self):
         pass
 
     def draw(self, surface):
-        pygame.draw.rect(surface, self.bg_colour, (ARENA_BOUNDARY,0,WIDTH-ARENA_BOUNDARY, HEIGHT))
+        pygame.draw.rect(surface, self.bg_colour, (ARENA_BOUNDARY_WIDTH,0,WIDTH-ARENA_BOUNDARY_WIDTH, HEIGHT))
+        self.upgrade_screen_image = pygame.image.load(path+"upgrade_screen.png").convert_alpha()
+        screen.blit(self.upgrade_screen_image, (695, 20))
+
+class LevelBar(Entity):
+    def __init__(self):
+        self.bg_colour = GREY
+
+    def update(self):
+        pass
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, self.bg_colour, (0,ARENA_BOUNDARY_HEIGHT, ARENA_BOUNDARY_WIDTH, HEIGHT-ARENA_BOUNDARY_HEIGHT))
 
 class Bullet(Entity):
     def __init__(self, pos, direction, speed=7, radius=5, colour=BLACK):
@@ -61,34 +80,40 @@ class Bullet(Entity):
         pygame.draw.circle(surface, self.colour, self.pos, self.radius)
     
     def off_screen(self):
-        return (self.pos.x < 0 or self.pos.x > ARENA_BOUNDARY-self.speed or self.pos.y < 0 or self.pos.y > HEIGHT)
+        return (self.pos.x < 0 or self.pos.x > ARENA_BOUNDARY_WIDTH-self.speed or 
+                self.pos.y < 0 or self.pos.y > ARENA_BOUNDARY_HEIGHT-self.speed)
 
 class Player(Entity):
-    def __init__(self, radius=10, thickness=1, max_speed=6, accel=0.5, friction=0.9, 
-                 level=1, last_shoot_time=0, shoot_delay=400):
+    def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, 
+                 shot_amount=1, bullet_speed=7, shot_delay=400, shot_damage=10, max_speed=6,defense=5):
         self.radius = radius
         self.fill = PLAYER_BLUE
         self.outline = BLACK
         self.thickness = thickness
-        self.level = level
+        self.level = level   # Determine what this is used for
         
         # Movement parameters
         # We have velocity, not just speed. This is to ensure smooth sliding movement!
         self.vel = pygame.Vector2(0,0)
         self.pos = pygame.Vector2(WIDTH//2, HEIGHT//2)
-        self.max_speed = max_speed
         self.accel = accel
         self.friction = friction
 
+        # Level properties
+        self.shot_amount = shot_amount
+        self.bullet_speed = bullet_speed
+        self.shot_delay = shot_delay
+        self.shot_damage = shot_damage
+        self.max_speed = max_speed
+        self.defense = defense
+
         # Cannon properties
         self.cannon_image = pygame.image.load(path+"stg1_cannon.png").convert_alpha()
-        self.cannon_size = (20,10)
+        self.cannon_size = (25,10)
         self.cannon_image = pygame.transform.scale(self.cannon_image, self.cannon_size)
-
-        self.cannon_fill = GREY
         self.angle = 0
-        self.last_shoot_time = last_shoot_time
-        self.shoot_delay = shoot_delay
+        self.last_shot_time = 0
+        
     
     def upgradeManage(self):
         if self.level >= 10 and self.level < 20:
@@ -123,8 +148,8 @@ class Player(Entity):
 
         # Inner min ensures x/y position does not go beyond one end of screen
         # Outer max ensures x/y position does not go beyond the other end of screen
-        self.pos.x = max(self.radius, min(ARENA_BOUNDARY - self.radius, self.pos.x))
-        self.pos.y = max(self.radius, min(HEIGHT - self.radius, self.pos.y))
+        self.pos.x = max(self.radius, min(ARENA_BOUNDARY_WIDTH - self.radius, self.pos.x))
+        self.pos.y = max(self.radius, min(ARENA_BOUNDARY_HEIGHT - self.radius, self.pos.y))
 
         # CONTROL AIMING =====================================================
         mouse_pos = pygame.mouse.get_pos()
@@ -134,8 +159,8 @@ class Player(Entity):
     def shoot(self):
         current_time = pygame.time.get_ticks()
 
-        if current_time - self.last_shoot_time >= self.shoot_delay:
-            self.last_shoot_time = current_time
+        if current_time - self.last_shot_time >= self.shot_delay:
+            self.last_shot_time = current_time
 
             # Get the starting position of the bullet via trigonometry
             dir_vector = pygame.Vector2(math.cos(self.angle),math.sin(self.angle))
@@ -168,9 +193,9 @@ def main():
     clock = pygame.time.Clock()
     player = Player()
     upgrade_screen = UpgradeScreen()
-    entities = [player,upgrade_screen]
+    level_bar = LevelBar()
+    entities = [player,upgrade_screen,level_bar]
 
-    player.level = 20
     player.upgradeManage()
 
     # GAME LOOP ================================
