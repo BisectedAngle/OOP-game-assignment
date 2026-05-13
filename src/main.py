@@ -38,22 +38,119 @@ class Entity():
         pass
 
 class UpgradeScreen(Entity):
-    def __init__(self):
+    def __init__(self, points=30):
         self.bg_colour = GREY
-        self.shot_amount = 1
-        self.bullet_speed = 1
-        self.shot_delay = 1
-        self.shot_damage = 1
-        self.max_speed = 1
-        self.defense = 1
+        self.upgrade_screen_image = pygame.image.load(path+"upgrade_screen.png").convert_alpha()
+        self.upgrade_levels_image = pygame.image.load(path+"numbers.png").convert_alpha()
+        self.points = points
 
+        self.shot_amount_pos = pygame.Rect(707,154,32,32)
+        self.bullet_speed_pos = pygame.Rect(707,218,32,32)
+        self.shot_delay_pos = pygame.Rect(707,282,32,32)
+        self.shot_damage_pos = pygame.Rect(707,346,32,32)
+        self.max_speed_pos = pygame.Rect(707,410,32,32)
+        self.defence_pos = pygame.Rect(707,474,32,32)
+
+        # Storing upgrades and skill properties in dictionary w/ tuple to reduce repeat of code
+        self.buttons = {
+            "SHOT AMOUNT": (0, self.shot_amount_pos, 2, self.upgrade_shot_amount),
+            "BULLET SPEED": (0, self.bullet_speed_pos, 2, self.upgrade_bullet_speed),
+            "SHOT DELAY": (0, self.shot_delay_pos, 3, self.upgrade_shot_delay),
+            "SHOT DAMAGE": (0, self.shot_damage_pos, 3, self.upgrade_shot_damage),
+            "MAX SPEED": (0, self.max_speed_pos, 3, self.upgrade_max_speed),
+            "DEFENCE": (0, self.defence_pos, 3, self.upgrade_defence),
+        }
+    
+    # Verify if upgrade a skill if can be afforded based on amount of points
+    def upgradeVerify(self, skill_level, upgrade_limit):
+        if self.points >= skill_level+1 and skill_level < upgrade_limit:
+            self.points -= skill_level+1
+            skill_level += 1
+            return skill_level
+        return None            
+
+    # Will upgade skill if corresponding '+' button is clicked
+    def click(self, pos):
+        for name, (skill_level, rect, upgrade_limit, upgrade) in self.buttons.items():
+            if rect.collidepoint(pos):
+                print(name, "CLICKED")
+                new_level = self.upgradeVerify(skill_level, upgrade_limit)
+                if new_level is not None:
+                    self.buttons[name] = (new_level, rect, upgrade_limit, upgrade)
+
+        # Print testing
+        print(self.points) 
+        for name, (skill_level, __, __, __) in self.buttons.items():
+            print(name, skill_level)
+
+    def upgrade_shot_amount(self):
+        pass
+    def upgrade_bullet_speed(self):
+        pass
+    def upgrade_shot_delay(self):
+        pass
+    def upgrade_shot_damage(self):
+        pass
+    def upgrade_max_speed(self):
+        pass
+    def upgrade_defence(self):
+        pass
+
+    # Empty, since the upgrade screen doesn't really move and respond to inputs other than mouse
     def update(self):
         pass
 
     def draw(self, surface):
+        # DRAWING BG AND BLANK UPGRADES ===============================================
         pygame.draw.rect(surface, self.bg_colour, (ARENA_BOUNDARY_WIDTH,0,WIDTH-ARENA_BOUNDARY_WIDTH, HEIGHT))
-        self.upgrade_screen_image = pygame.image.load(path+"upgrade_screen.png").convert_alpha()
         screen.blit(self.upgrade_screen_image, (695, 20))
+
+        # DRAWING POINTS AMOUNT ===============================================
+        font = pygame.font.Font(None, 35)
+        text_surface = font.render(str(self.points), True, (0, 0, 0))
+        screen.blit(text_surface, (900, 90))
+        
+        # DRAWING COLOURED UPGRADE LEVELS ===============================================
+        # Reference for SHOT AMOUNT = 1: 96x32 size image from (0, 0) of the source image to (739, 155) on screen
+        if self.buttons["SHOT AMOUNT"][0] == 1:
+            screen.blit(self.upgrade_levels_image, (740, 153), (0, 0, 94, 32))
+        elif self.buttons["SHOT AMOUNT"][0]==2:
+            screen.blit(self.upgrade_levels_image, (740, 153), (0, 0, 192, 32))
+        
+        if self.buttons["BULLET SPEED"][0] == 1:
+            screen.blit(self.upgrade_levels_image, (740, 216), (0, 31, 94, 32))
+        elif self.buttons["BULLET SPEED"][0]==2:
+            screen.blit(self.upgrade_levels_image, (740, 216), (0, 31, 192, 32))
+        
+        if self.buttons["SHOT DELAY"][0] == 1:
+            screen.blit(self.upgrade_levels_image, (739, 280), (0, 63, 64, 29))
+        elif self.buttons["SHOT DELAY"][0]==2:
+            screen.blit(self.upgrade_levels_image, (739, 280), (0, 63, 128, 29))
+        elif self.buttons["SHOT DELAY"][0]==3:
+            screen.blit(self.upgrade_levels_image, (739, 280), (0, 63, 192, 29))
+        
+        if self.buttons["SHOT DAMAGE"][0] == 1:
+            screen.blit(self.upgrade_levels_image, (739, 342), (0, 94, 64, 31))
+        elif self.buttons["SHOT DAMAGE"][0]==2:
+            screen.blit(self.upgrade_levels_image, (739, 342), (0, 94, 128, 31))
+        elif self.buttons["SHOT DAMAGE"][0]==3:
+            screen.blit(self.upgrade_levels_image, (739, 342), (0, 94, 192, 31))
+        
+        if self.buttons["MAX SPEED"][0] == 1:
+            screen.blit(self.upgrade_levels_image, (739, 407), (0, 126, 64, 31))
+        elif self.buttons["MAX SPEED"][0] == 2:
+            screen.blit(self.upgrade_levels_image, (739, 407), (0, 126, 128, 31))
+        elif self.buttons["MAX SPEED"][0] == 3:
+            screen.blit(self.upgrade_levels_image, (739, 407), (0, 126, 192, 31))
+
+        if self.buttons["DEFENCE"][0] == 1:
+            screen.blit(self.upgrade_levels_image, (739, 471), (0, 158, 64, 31))
+        elif self.buttons["DEFENCE"][0] == 2:
+            screen.blit(self.upgrade_levels_image, (739, 471), (0, 158, 128, 31))
+        elif self.buttons["DEFENCE"][0] == 3:
+            screen.blit(self.upgrade_levels_image, (739, 471), (0, 158, 192, 31))
+
+        
 
 class LevelBar(Entity):
     def __init__(self):
@@ -85,7 +182,7 @@ class Bullet(Entity):
 
 class Player(Entity):
     def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, 
-                 shot_amount=1, bullet_speed=7, shot_delay=400, shot_damage=10, max_speed=6,defense=5):
+                 shot_amount=1, bullet_speed=7, shot_delay=400, shot_damage=10, max_speed=6,defence=5):
         self.radius = radius
         self.fill = PLAYER_BLUE
         self.outline = BLACK
@@ -105,7 +202,7 @@ class Player(Entity):
         self.shot_delay = shot_delay
         self.shot_damage = shot_damage
         self.max_speed = max_speed
-        self.defense = defense
+        self.defence = defence
 
         # Cannon properties
         self.cannon_image = pygame.image.load(path+"stg1_cannon.png").convert_alpha()
@@ -206,11 +303,14 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-        
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                upgrade_screen.click(event.pos)
+
         # GET MOUSE INPUTS ===================================
         mouse_buttons = pygame.mouse.get_pressed()
         if mouse_buttons[0]:
             entities.append(player.shoot())
+        
             
         # DRAW + UPDATE ALL ENTITIES ===========================
         screen.fill(WHITE)
