@@ -267,23 +267,33 @@ class Player(Entity):
         # CONTROL AIMING =====================================================
         mouse_pos = pygame.mouse.get_pos()
         direction = pygame.Vector2(mouse_pos) - self.pos
-
-        # Mouse angle in radians
-        self.angle = math.atan2(direction.y, direction.x)        
+        self.angle = math.atan2(direction.y, direction.x)      # Mouse angle in radians
     
     def shoot(self):
+        bullets = []
         current_time = pygame.time.get_ticks()
 
         if current_time - self.last_shot_time >= self.shot_delay:
             self.last_shot_time = current_time
 
-            # Get the starting position of the bullet via trigonometry + hardcoded offsets
-            base_dir = pygame.Vector2(math.cos(self.angle), math.sin(self.angle))
-            dir_vector_1 = base_dir
-            bullet_pos = self.pos + base_dir * self.cannon_size[0]
+            # Get the starting position of the bullet via trigonometry + hardcoded offsets for bullet spread
+            dir_vector_1 = pygame.Vector2(math.cos(self.angle), math.sin(self.angle))
+            dir_vector_2 = pygame.Vector2(math.cos(self.angle+0.05), math.sin(self.angle+0.05))
+            dir_vector_3 = pygame.Vector2(math.cos(self.angle-0.05), math.sin(self.angle-0.05))
+            bullet_pos = self.pos + dir_vector_1 * self.cannon_size[0]//2
 
-            # Instantiate a bullet
-            return Bullet(bullet_pos, dir_vector_1, self.bullet_speed)
+            # Instantiate a bullet depending on level of shot amount skill
+            if self.shot_amount == 0:
+                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed)) 
+            if self.shot_amount == 1:
+                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed))
+                bullets.append(Bullet(bullet_pos, dir_vector_2, self.bullet_speed)) 
+            if self.shot_amount == 2:
+                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed)) 
+                bullets.append(Bullet(bullet_pos, dir_vector_2, self.bullet_speed)) 
+                bullets.append(Bullet(bullet_pos, dir_vector_3, self.bullet_speed)) 
+        
+            return bullets
         
 
     def draw(self, surface):
@@ -328,20 +338,20 @@ def main():
         # GET MOUSE INPUTS ===================================
         mouse_buttons = pygame.mouse.get_pressed()
         if mouse_buttons[0]:
-            entities.append(player.shoot())
-        
+            bullets = player.shoot()
+            if bullets:    # Verifying whether list is empty to reduce unnecessary processing when added to entities list
+                entities.extend(bullets)
             
         # DRAW + UPDATE ALL ENTITIES ===========================
         screen.fill(WHITE)
-        for entity in entities:
-            if entity:
-                entity.update()
-                entity.draw(screen)
+        for entity in entities[:]:   # Entities[:] is a shallow copy, because entities is already being consistently updated above
+                                     # Without this, bullets lag a bit
+            entity.update()
+            entity.draw(screen)
 
-                # Remove bullet from entity list if it is off screen to conserve memory 
-                if isinstance(entity, Bullet):
-                    if entity.off_screen():
-                        entities.remove(entity)
+            # Remove bullet from entity list if it is off screen to conserve memory 
+            if isinstance(entity, Bullet) and entity.off_screen():
+                entities.remove(entity)
 
         pygame.display.flip() 
 
