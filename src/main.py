@@ -38,12 +38,13 @@ class Entity():
         pass
 
 class UpgradeScreen(Entity):
-    def __init__(self, points=30):
+    def __init__(self, player, points=30):
         self.bg_colour = GREY
         self.upgrade_screen_image = pygame.image.load(path+"upgrade_screen.png").convert_alpha()
         self.upgrade_levels_image = pygame.image.load(path+"numbers.png").convert_alpha()
         self.points = points
 
+        self.player = player
         self.shot_amount_pos = pygame.Rect(707,154,32,32)
         self.bullet_speed_pos = pygame.Rect(707,218,32,32)
         self.shot_delay_pos = pygame.Rect(707,282,32,32)
@@ -52,6 +53,7 @@ class UpgradeScreen(Entity):
         self.defence_pos = pygame.Rect(707,474,32,32)
 
         # Storing upgrades and skill properties in dictionary w/ tuple to reduce repeat of code
+        # Buttons reference: "NAME": (skill_level, rect, limit, upgrade)
         self.buttons = {
             "SHOT AMOUNT": (0, self.shot_amount_pos, 2, self.upgrade_shot_amount),
             "BULLET SPEED": (0, self.bullet_speed_pos, 2, self.upgrade_bullet_speed),
@@ -75,26 +77,36 @@ class UpgradeScreen(Entity):
             if rect.collidepoint(pos):
                 print(name, "CLICKED")
                 new_level = self.upgradeVerify(skill_level, upgrade_limit)
+
+                # Update self.buttons dict with new level
                 if new_level is not None:
                     self.buttons[name] = (new_level, rect, upgrade_limit, upgrade)
+                    upgrade()
 
         # Print testing
         print(self.points) 
         for name, (skill_level, __, __, __) in self.buttons.items():
             print(name, skill_level)
 
+    # Some arbitrary values for placeholder, not in use rn
     def upgrade_shot_amount(self):
-        pass
+        self.player.shot_amount = self.buttons["SHOT AMOUNT"][0]
+    
     def upgrade_bullet_speed(self):
-        pass
+        self.player.bullet_speed += 2
+
     def upgrade_shot_delay(self):
-        pass
+        self.player.shot_delay -= 50
+
     def upgrade_shot_damage(self):
-        pass
+        self.player.shot_damage *= 1.2
+    
     def upgrade_max_speed(self):
-        pass
+        self.player.accel += 0.05
+        self.player.max_speed += 2
+        
     def upgrade_defence(self):
-        pass
+        self.player.defence += 5
 
     # Empty, since the upgrade screen doesn't really move and respond to inputs other than mouse
     def update(self):
@@ -162,11 +174,13 @@ class LevelBar(Entity):
     def draw(self, surface):
         pygame.draw.rect(surface, self.bg_colour, (0,ARENA_BOUNDARY_HEIGHT, ARENA_BOUNDARY_WIDTH, HEIGHT-ARENA_BOUNDARY_HEIGHT))
 
+
+
 class Bullet(Entity):
-    def __init__(self, pos, direction, speed=7, radius=5, colour=BLACK):
+    def __init__(self, pos, direction, speed, radius=5, colour=BLACK):
         self.pos = pygame.Vector2(pos)
         self.speed = speed
-        self.vel = pygame.Vector2(direction)*speed
+        self.vel = pygame.Vector2(direction) *speed
         self.radius = radius
         self.colour = colour
 
@@ -182,7 +196,7 @@ class Bullet(Entity):
 
 class Player(Entity):
     def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, 
-                 shot_amount=1, bullet_speed=7, shot_delay=400, shot_damage=10, max_speed=6,defence=5):
+                 shot_amount=0, bullet_speed=7, shot_delay=400, shot_damage=10, max_speed=6,defence=5):
         self.radius = radius
         self.fill = PLAYER_BLUE
         self.outline = BLACK
@@ -212,13 +226,15 @@ class Player(Entity):
         self.last_shot_time = 0
         
     
-    def upgradeManage(self):
-        if self.level >= 10 and self.level < 20:
+    def cannonManage(self):
+        if self.shot_amount == 1:
             self.cannon_image = pygame.image.load(path+"stg2_cannon.png").convert_alpha()
             self.cannon_size = (20,30)
-        if self.level >= 20:
+        elif self.shot_amount == 2:
             self.cannon_image = pygame.image.load(path+"stg3_cannon.png").convert_alpha()
             self.cannon_size = (20,35)
+        else:
+            return
         
         self.cannon_image = pygame.transform.scale(self.cannon_image, self.cannon_size)
 
@@ -251,6 +267,8 @@ class Player(Entity):
         # CONTROL AIMING =====================================================
         mouse_pos = pygame.mouse.get_pos()
         direction = pygame.Vector2(mouse_pos) - self.pos
+
+        # Mouse angle in radians
         self.angle = math.atan2(direction.y, direction.x)        
     
     def shoot(self):
@@ -259,16 +277,18 @@ class Player(Entity):
         if current_time - self.last_shot_time >= self.shot_delay:
             self.last_shot_time = current_time
 
-            # Get the starting position of the bullet via trigonometry
-            dir_vector = pygame.Vector2(math.cos(self.angle),math.sin(self.angle))
-            bullet_pos = self.pos + dir_vector * self.cannon_size[0]
+            # Get the starting position of the bullet via trigonometry + hardcoded offsets
+            base_dir = pygame.Vector2(math.cos(self.angle), math.sin(self.angle))
+            dir_vector_1 = base_dir
+            bullet_pos = self.pos + base_dir * self.cannon_size[0]
 
             # Instantiate a bullet
-            return Bullet(bullet_pos, dir_vector)
-
-        return None
+            return Bullet(bullet_pos, dir_vector_1, self.bullet_speed)
+        
 
     def draw(self, surface):
+        self.cannonManage()
+
         # Creating a surface for the cannon so it can be easily rotated
         rotated_cannon = pygame.transform.rotate(self.cannon_image, -math.degrees(self.angle))
 
@@ -284,16 +304,15 @@ class Player(Entity):
         pygame.draw.circle(surface, self.fill, self.pos, self.radius)
         pygame.draw.circle(surface, self.outline, self.pos, self.radius, self.thickness)
 
+
 # DRIVER CODE ============================================================
 
 def main():
     clock = pygame.time.Clock()
     player = Player()
-    upgrade_screen = UpgradeScreen()
+    upgrade_screen = UpgradeScreen(player=player)
     level_bar = LevelBar()
     entities = [player,upgrade_screen,level_bar]
-
-    player.upgradeManage()
 
     # GAME LOOP ================================
     running = True
