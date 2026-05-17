@@ -5,7 +5,8 @@ from abc import ABC, abstractmethod
 # CONSTANTS + INITIALISATION ===================================================
 
 WHITE = (255,255,255)
-GREY = (145, 145, 145)
+MENU_GREY = (145, 145, 145)
+PAUSE_BLACK = (0, 0, 0, 175)
 BLACK = (0,0,0)
 PLAYER_BLUE = (0, 110, 255)
 
@@ -23,10 +24,7 @@ pygame.display.set_caption("Dieflow")
 
 # CLASSES ===============================================================
 
-# TODO: Implement upgrades: More bullets, more bullet damage
-#       Right now make more bullets.
-
-# TODO: Make game pause when mouse on the upgrade screen
+# TODO: Make a good enemy class
 
 class Entity():
     @abstractmethod
@@ -37,9 +35,81 @@ class Entity():
     def draw():
         pass
 
+
+class Enemy(Entity):
+    def __init__(self, health, player, pos, accel, friction, max_speed, image):
+        self.health = health
+        self.player = player
+
+        self.vel = pygame.Vector2(0,0)
+        self.pos = pos
+        self.accel = accel
+        self.friction = friction
+        self.max_speed = max_speed
+
+        self.image = pygame.image.load(path+image).convert_alpha()
+        self.image = pygame.transform.scale(self.image, (25,25))
+        
+    @abstractmethod
+    def attack():
+        pass
+
+    @abstractmethod
+    def take_damage():
+        pass
+
+
+class Processor(Enemy):
+    # Inherit these parameters from Enemy
+    def __init__(self, health, player, pos, accel=0.3, friction=0.9, max_speed=5, image="square.png"):
+        super().__init__(health, player, pos, accel, friction, max_speed, image)
+        
+    def attack():
+        pass
+
+    def take_damage():
+        pass
+    
+    def update(self):
+        # Get the direction aiming at the player
+        direction = self.player.pos - self.pos
+        direction = direction.normalize()     # Makes direction magnitude 1, this is for consistent velocity 
+        
+        # Similar movement processing like the Player class
+        self.vel += direction * self.accel
+        self.vel *= self.friction
+        self.pos += self.vel
+
+        # Resize velocity vector so that it does not exceed max_speed when diagonal
+        if self.vel.length() > self.max_speed:
+            self.vel.scale_to_length(self.max_speed)
+
+    def draw(self,surface):
+        rect = self.image.get_rect(center=self.pos)
+        surface.blit(self.image, rect)
+
+
+class PauseScreen():
+    def __init__(self):
+        self.colour = PAUSE_BLACK
+        self.rect = pygame.Rect(0,0,ARENA_BOUNDARY_WIDTH, ARENA_BOUNDARY_HEIGHT)
+        self.temp_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+
+    def draw(self,surface):
+        pygame.draw.rect(self.temp_surface, self.colour, self.rect)
+        surface.blit(self.temp_surface,self.rect)
+
+        font = pygame.font.Font(None, 100)
+        text_surface = font.render("PAUSED", True, (255,255,255))
+        surface.blit(text_surface, (210,220))
+
+
 class UpgradeScreen(Entity):
     def __init__(self, player, points=30):
-        self.bg_colour = GREY
+        ARENA_WIDTH = WIDTH-ARENA_BOUNDARY_WIDTH
+        self.arena_area = pygame.Rect(ARENA_BOUNDARY_WIDTH, 0, ARENA_WIDTH, HEIGHT)
+
+        self.bg_colour = MENU_GREY
         self.upgrade_screen_image = pygame.image.load(path+"upgrade_screen.png").convert_alpha()
         self.upgrade_levels_image = pygame.image.load(path+"numbers.png").convert_alpha()
         self.points = points
@@ -115,58 +185,58 @@ class UpgradeScreen(Entity):
     def draw(self, surface):
         # DRAWING BG AND BLANK UPGRADES ===============================================
         pygame.draw.rect(surface, self.bg_colour, (ARENA_BOUNDARY_WIDTH,0,WIDTH-ARENA_BOUNDARY_WIDTH, HEIGHT))
-        screen.blit(self.upgrade_screen_image, (695, 20))
+        surface.blit(self.upgrade_screen_image, (695, 20))
 
         # DRAWING POINTS AMOUNT ===============================================
         font = pygame.font.Font(None, 35)
         text_surface = font.render(str(self.points), True, (0, 0, 0))
-        screen.blit(text_surface, (900, 90))
+        surface.blit(text_surface, (900, 90))
         
         # DRAWING COLOURED UPGRADE LEVELS ===============================================
         # Reference for SHOT AMOUNT = 1: 96x32 size image from (0, 0) of the source image to (739, 155) on screen
         if self.buttons["SHOT AMOUNT"][0] == 1:
-            screen.blit(self.upgrade_levels_image, (740, 153), (0, 0, 94, 32))
+            surface.blit(self.upgrade_levels_image, (740, 153), (0, 0, 94, 32))
         elif self.buttons["SHOT AMOUNT"][0]==2:
-            screen.blit(self.upgrade_levels_image, (740, 153), (0, 0, 192, 32))
+            surface.blit(self.upgrade_levels_image, (740, 153), (0, 0, 192, 32))
         
         if self.buttons["BULLET SPEED"][0] == 1:
-            screen.blit(self.upgrade_levels_image, (740, 216), (0, 31, 94, 32))
+            surface.blit(self.upgrade_levels_image, (740, 216), (0, 31, 94, 32))
         elif self.buttons["BULLET SPEED"][0]==2:
-            screen.blit(self.upgrade_levels_image, (740, 216), (0, 31, 192, 32))
+            surface.blit(self.upgrade_levels_image, (740, 216), (0, 31, 192, 32))
         
         if self.buttons["SHOT DELAY"][0] == 1:
-            screen.blit(self.upgrade_levels_image, (739, 280), (0, 63, 64, 29))
+            surface.blit(self.upgrade_levels_image, (739, 280), (0, 63, 64, 29))
         elif self.buttons["SHOT DELAY"][0]==2:
-            screen.blit(self.upgrade_levels_image, (739, 280), (0, 63, 128, 29))
+            surface.blit(self.upgrade_levels_image, (739, 280), (0, 63, 128, 29))
         elif self.buttons["SHOT DELAY"][0]==3:
-            screen.blit(self.upgrade_levels_image, (739, 280), (0, 63, 192, 29))
+            surface.blit(self.upgrade_levels_image, (739, 280), (0, 63, 192, 29))
         
         if self.buttons["SHOT DAMAGE"][0] == 1:
-            screen.blit(self.upgrade_levels_image, (739, 342), (0, 94, 64, 31))
+            surface.blit(self.upgrade_levels_image, (739, 342), (0, 94, 64, 31))
         elif self.buttons["SHOT DAMAGE"][0]==2:
-            screen.blit(self.upgrade_levels_image, (739, 342), (0, 94, 128, 31))
+            surface.blit(self.upgrade_levels_image, (739, 342), (0, 94, 128, 31))
         elif self.buttons["SHOT DAMAGE"][0]==3:
-            screen.blit(self.upgrade_levels_image, (739, 342), (0, 94, 192, 31))
+            surface.blit(self.upgrade_levels_image, (739, 342), (0, 94, 192, 31))
         
         if self.buttons["MAX SPEED"][0] == 1:
-            screen.blit(self.upgrade_levels_image, (739, 407), (0, 126, 64, 31))
+            surface.blit(self.upgrade_levels_image, (739, 407), (0, 126, 64, 31))
         elif self.buttons["MAX SPEED"][0] == 2:
-            screen.blit(self.upgrade_levels_image, (739, 407), (0, 126, 128, 31))
+            surface.blit(self.upgrade_levels_image, (739, 407), (0, 126, 128, 31))
         elif self.buttons["MAX SPEED"][0] == 3:
-            screen.blit(self.upgrade_levels_image, (739, 407), (0, 126, 192, 31))
+            surface.blit(self.upgrade_levels_image, (739, 407), (0, 126, 192, 31))
 
         if self.buttons["DEFENCE"][0] == 1:
-            screen.blit(self.upgrade_levels_image, (739, 471), (0, 158, 64, 31))
+            surface.blit(self.upgrade_levels_image, (739, 471), (0, 158, 64, 31))
         elif self.buttons["DEFENCE"][0] == 2:
-            screen.blit(self.upgrade_levels_image, (739, 471), (0, 158, 128, 31))
+            surface.blit(self.upgrade_levels_image, (739, 471), (0, 158, 128, 31))
         elif self.buttons["DEFENCE"][0] == 3:
-            screen.blit(self.upgrade_levels_image, (739, 471), (0, 158, 192, 31))
+            surface.blit(self.upgrade_levels_image, (739, 471), (0, 158, 192, 31))
 
         
 
 class LevelBar(Entity):
     def __init__(self):
-        self.bg_colour = GREY
+        self.bg_colour = MENU_GREY
 
     def update(self):
         pass
@@ -177,12 +247,13 @@ class LevelBar(Entity):
 
 
 class Bullet(Entity):
-    def __init__(self, pos, direction, speed, radius=5, colour=BLACK):
+    def __init__(self, pos, direction, speed, shot_damage, radius=5, colour=BLACK):
         self.pos = pygame.Vector2(pos)
         self.speed = speed
         self.vel = pygame.Vector2(direction) *speed
         self.radius = radius
         self.colour = colour
+        self.shot_damage = shot_damage
 
     def update(self):
         self.pos += self.vel
@@ -193,6 +264,7 @@ class Bullet(Entity):
     def off_screen(self):
         return (self.pos.x < 0 or self.pos.x > ARENA_BOUNDARY_WIDTH-self.speed or 
                 self.pos.y < 0 or self.pos.y > ARENA_BOUNDARY_HEIGHT-self.speed)
+
 
 class Player(Entity):
     def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, 
@@ -225,7 +297,6 @@ class Player(Entity):
         self.angle = 0
         self.last_shot_time = 0
         
-    
     def cannonManage(self):
         if self.shot_amount == 1:
             self.cannon_image = pygame.image.load(path+"stg2_cannon.png").convert_alpha()
@@ -233,8 +304,6 @@ class Player(Entity):
         elif self.shot_amount == 2:
             self.cannon_image = pygame.image.load(path+"stg3_cannon.png").convert_alpha()
             self.cannon_size = (20,35)
-        else:
-            return
         
         self.cannon_image = pygame.transform.scale(self.cannon_image, self.cannon_size)
 
@@ -284,14 +353,14 @@ class Player(Entity):
 
             # Instantiate a bullet depending on level of shot amount skill
             if self.shot_amount == 0:
-                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed)) 
+                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage)) 
             if self.shot_amount == 1:
-                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed))
-                bullets.append(Bullet(bullet_pos, dir_vector_2, self.bullet_speed)) 
+                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage))
+                bullets.append(Bullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage)) 
             if self.shot_amount == 2:
-                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed)) 
-                bullets.append(Bullet(bullet_pos, dir_vector_2, self.bullet_speed)) 
-                bullets.append(Bullet(bullet_pos, dir_vector_3, self.bullet_speed)) 
+                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage)) 
+                bullets.append(Bullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage)) 
+                bullets.append(Bullet(bullet_pos, dir_vector_3, self.bullet_speed, self.shot_damage)) 
         
             return bullets
         
@@ -322,7 +391,9 @@ def main():
     player = Player()
     upgrade_screen = UpgradeScreen(player=player)
     level_bar = LevelBar()
-    entities = [player,upgrade_screen,level_bar]
+    pause_screen = PauseScreen()
+    processor = Processor(pos=(0,0), health=50, player=player)
+    entities = [player,upgrade_screen,level_bar,processor]
 
     # GAME LOOP ================================
     running = True
@@ -336,23 +407,37 @@ def main():
                 upgrade_screen.click(event.pos)
 
         # GET MOUSE INPUTS ===================================
+        mouse_pos = pygame.mouse.get_pos()
         mouse_buttons = pygame.mouse.get_pressed()
-        if mouse_buttons[0]:
-            bullets = player.shoot()
-            if bullets:    # Verifying whether list is empty to reduce unnecessary processing when added to entities list
-                entities.extend(bullets)
+
+        # VERIFY GAME PAUSE ===============================================
+        paused = upgrade_screen.arena_area.collidepoint(mouse_pos)
+
+        # DRAWING PAUSE SCREEN ===========================
+        if paused:
+            screen.fill(WHITE)
+            for entity in entities:
+                entity.draw(screen)
+            pause_screen.draw(screen)
+
+        else:
+            # SHOOTING MECHANIC ===============================================
+            if mouse_buttons[0]:
+                bullets = player.shoot()
+                if bullets:    # Verifying whether list is empty to reduce unnecessary processing when added to entities list
+                    entities.extend(bullets)
             
-        # DRAW + UPDATE ALL ENTITIES ===========================
-        screen.fill(WHITE)
-        for entity in entities[:]:   # Entities[:] is a shallow copy, because entities is already being consistently updated above
-                                     # Without this, bullets lag a bit
-            entity.update()
-            entity.draw(screen)
+            # DRAWING AND UPDATING ALL ENTITIES ==========================================
+            screen.fill(WHITE)
+            for entity in entities[:]:   # Entities[:] is a shallow copy, because entities is already being consistently updated above
+                                        # Without this, bullets lag a bit
+                entity.draw(screen)
+                entity.update()
 
-            # Remove bullet from entity list if it is off screen to conserve memory 
-            if isinstance(entity, Bullet) and entity.off_screen():
-                entities.remove(entity)
-
+                # Remove bullet from entity list if it is off screen to conserve memory 
+                if isinstance(entity, Bullet) and entity.off_screen():
+                    entities.remove(entity)
+            
         pygame.display.flip() 
 
     pygame.quit()
