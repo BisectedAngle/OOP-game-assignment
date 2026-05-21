@@ -6,7 +6,10 @@ from abc import ABC, abstractmethod
 
 WHITE = (255,255,255)
 RED = (255,0,0)
+GREEN = (0,255,0)
+YELLOW = (255,255,0)
 MENU_GREY = (145, 145, 145)
+HEALTHBAR_GREY = (67,67,67)
 PAUSE_BLACK = (0, 0, 0, 175)
 BLACK = (0,0,0)
 PLAYER_BLUE = (0, 110, 255)
@@ -26,7 +29,9 @@ pygame.display.set_caption("Dieflow")
 
 # CLASSES ===============================================================
 
-# TODO: Make health bar for player, maybe health indicator for enemy
+# TODO: Maybe health indicator for enemy
+# TODO: Make a new shooting enemy, with unique bullets 
+# TODO: Determine level indicators, and enemy wave spawning system
 
 class Entity():
     @abstractmethod
@@ -72,12 +77,11 @@ class Enemy(Entity):
 
 class Processor(Enemy):
     # Inherit these parameters from Enemy
-    def __init__(self, player, pos, accel=0.2, friction=0.9, max_speed=1.5, health=20, damage=10, image="square.png"):
+    def __init__(self, player, pos, accel=0.2, friction=0.9, max_speed=1.5, health=20, damage=5, image="square.png"):
         super().__init__(player, pos, accel, friction, max_speed, health, damage, image)
         self.hitbox = pygame.Rect(self.pos[0], self.pos[1], 25, 25)
-        
-        
-    def attack():
+          
+    def attack(self):
         pass
     
     def update(self):
@@ -100,19 +104,21 @@ class Processor(Enemy):
     def draw(self,surface):
         rect = self.image.get_rect(center=self.pos)
         surface.blit(self.image, rect)
-        # pygame.draw.rect(surface,RED, self.hitbox)
 
 
 class PauseScreen():
     def __init__(self):
         self.colour = PAUSE_BLACK
         self.rect = pygame.Rect(0,0,ARENA_BOUNDARY_WIDTH, HEIGHT)
+
+        # Temp surface is created so the screen can have a slight transparent opacity
         self.temp_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
 
     def draw(self,surface):
         pygame.draw.rect(self.temp_surface, self.colour, self.rect)
         surface.blit(self.temp_surface,self.rect)
 
+        # Put "paused" text on top
         font = pygame.font.Font(None, 100)
         text_surface = font.render("PAUSED", True, (255,255,255))
         surface.blit(text_surface, (210,220))
@@ -246,18 +252,46 @@ class UpgradeScreen(Entity):
         elif self.buttons["DEFENCE"][0] == 3:
             surface.blit(self.upgrade_levels_image, (739, 471), (0, 158, 192, 31))
 
-        
 
-# class LevelBar(Entity):
-#     def __init__(self):
-#         self.bg_colour = MENU_GREY
+class HealthBar():
+    def __init__(self, pos, max_health, curr_health, frame_width=30, frame_height=7,health_width=28,health_height=5):
+        self.pos = pos
+        self.max_health = max_health
+        self.curr_health = curr_health
 
-#     def update(self):
-#         pass
+        # Graphic properties of the health bar
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.max_content_width = health_width
+        self.content_width = health_width
+        self.content_height = health_height
+        self.colour = GREEN
 
-#     def draw(self, surface):
-#         pygame.draw.rect(surface, self.bg_colour, (0,ARENA_BOUNDARY_HEIGHT, ARENA_BOUNDARY_WIDTH, HEIGHT-ARENA_BOUNDARY_HEIGHT))
+        # Making rect for health bar frame and actual content bar
+        self.health_bar_frame = pygame.Rect(pos[0], pos[1], self.frame_width, self.frame_height)
+        self.health_bar_content = pygame.Rect(pos[0], pos[1], self.content_width, self.content_height)
 
+    def update(self, health, pos):
+        self.curr_health = health
+        health_percent = self.curr_health/self.max_health
+        self.content_width = round(self.max_content_width * health_percent)
+
+        # Update the health bar and shifting its content bar to be in the right place 
+        self.health_bar_frame.center = pos
+        self.health_bar_content.topleft = pos - pygame.Vector2(self.frame_width//2-1,self.frame_height//2-1)
+        self.health_bar_content.width = self.content_width  # Change the content bar width as a percentage of its max width
+
+        # Change colour of content bar depending on health percent
+        if health_percent >= 0.67:
+            self.colour = GREEN
+        elif health_percent >= 0.34:
+            self.colour = YELLOW
+        else:
+            self.colour = RED
+    
+    def draw(self, surface):
+        pygame.draw.rect(surface, HEALTHBAR_GREY, self.health_bar_frame)
+        pygame.draw.rect(surface, self.colour, self.health_bar_content)
 
 
 class Bullet(Entity):
@@ -287,14 +321,13 @@ class Bullet(Entity):
 
 
 class Player(Entity):
-    def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, health=50, 
+    def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, health=50, heal_delay=2000, heal_per_sec=10,
                  shot_amount=0, bullet_speed=7, shot_delay=400, shot_damage=10, max_speed=6,defence=5):
         self.radius = radius
         self.fill = PLAYER_BLUE
         self.outline = BLACK
         self.thickness = thickness
         self.level = level   # Determine what this is used for
-        self.health = health
 
         # Movement parameters
         # We have velocity, not just speed. This is to ensure smooth sliding movement!
@@ -303,6 +336,13 @@ class Player(Entity):
         self.hitbox = pygame.Rect(0, 0, 20, 20)
         self.accel = accel
         self.friction = friction
+
+        self.max_health = health
+        self.health = health
+        self.heal_delay = heal_delay
+        self.heal_per_sec = heal_per_sec
+        self.health_bar = HealthBar(pos=self.pos, max_health=self.health, curr_health=self.health)
+        self.last_heal_time = 0
 
         # Level properties
         self.shot_amount = shot_amount
@@ -330,7 +370,6 @@ class Player(Entity):
         self.cannon_image = pygame.transform.scale(self.cannon_image, self.cannon_size)
 
     def update(self):
-
         # CONTROL MOVEMENT ==========================================
         keys = pygame.key.get_pressed()
         if keys[pygame.K_a]:
@@ -361,8 +400,12 @@ class Player(Entity):
         direction = pygame.Vector2(mouse_pos) - self.pos
         self.angle = math.atan2(direction.y, direction.x)      # Mouse angle in radians
         
-        # Update hitbox
+
+        # UPDATE HITBOX AND HEALTH BAR ===================================
         self.hitbox.center = self.pos
+
+        health_bar_offset = self.pos + pygame.Vector2(0, 20)
+        self.health_bar.update(self.health, health_bar_offset)
 
     def shoot(self):
         bullets = []
@@ -408,7 +451,8 @@ class Player(Entity):
         # Draw the player and outline over the cannon
         pygame.draw.circle(surface, self.fill, self.pos, self.radius)
         pygame.draw.circle(surface, self.outline, self.pos, self.radius, self.thickness)
-
+        
+        self.health_bar.draw(surface)
         # Draw hitbox
         # pygame.draw.rect(surface, RED, self.hitbox)
 
@@ -424,7 +468,6 @@ def main():
     entities = [player,upgrade_screen]
 
     spawn_loc = [(0,0), (ARENA_BOUNDARY_WIDTH,0), (0,HEIGHT), (ARENA_BOUNDARY_WIDTH,HEIGHT)]
-    # spawn_loc = [(0,0)]
     for loc in spawn_loc:
         processor = Processor(pos=loc, health=20, player=player)
         entities.append(processor)
@@ -480,7 +523,6 @@ def main():
                     if entity.check_death() or entity.collide():
                         entities.remove(entity)
                         GLOBAL_ENEMY_POS.pop(entity)
-                
             
         pygame.display.flip() 
 
