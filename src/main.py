@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 # CONSTANTS + INITIALISATION ===================================================
 
 WHITE = (255,255,255)
+RED = (255,0,0)
 MENU_GREY = (145, 145, 145)
 PAUSE_BLACK = (0, 0, 0, 175)
 BLACK = (0,0,0)
@@ -13,7 +14,8 @@ PLAYER_BLUE = (0, 110, 255)
 WIDTH = 960
 HEIGHT = 540
 ARENA_BOUNDARY_WIDTH = 680
-ARENA_BOUNDARY_HEIGHT = 480
+
+GLOBAL_ENEMY_POS = {}
 
 path = "src/assets/"
 
@@ -24,7 +26,7 @@ pygame.display.set_caption("Dieflow")
 
 # CLASSES ===============================================================
 
-# TODO: Make a good enemy class
+# TODO: Make health bar for player, maybe health indicator for enemy
 
 class Entity():
     @abstractmethod
@@ -37,8 +39,7 @@ class Entity():
 
 
 class Enemy(Entity):
-    def __init__(self, health, player, pos, accel, friction, max_speed, image):
-        self.health = health
+    def __init__(self,player, pos, accel, friction, max_speed, health, damage, image):
         self.player = player
 
         self.vel = pygame.Vector2(0,0)
@@ -47,27 +48,36 @@ class Enemy(Entity):
         self.friction = friction
         self.max_speed = max_speed
 
+        self.health = health
+        self.damage = damage
         self.image = pygame.image.load(path+image).convert_alpha()
         self.image = pygame.transform.scale(self.image, (25,25))
         
+    def collide(self):
+        if self.player.hitbox.colliderect(self.hitbox):
+            self.player.health -= self.damage
+            return True
+    
     @abstractmethod
-    def attack():
-        pass
+    def attack(self):
+        pass    
 
-    @abstractmethod
-    def take_damage():
-        pass
+    def take_damage(self,damage):
+        self.health -= damage
+
+    def check_death(self):
+        if self.health <= 0:
+            return True
 
 
 class Processor(Enemy):
     # Inherit these parameters from Enemy
-    def __init__(self, health, player, pos, accel=0.3, friction=0.9, max_speed=5, image="square.png"):
-        super().__init__(health, player, pos, accel, friction, max_speed, image)
+    def __init__(self, player, pos, accel=0.2, friction=0.9, max_speed=1.5, health=20, damage=10, image="square.png"):
+        super().__init__(player, pos, accel, friction, max_speed, health, damage, image)
+        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], 25, 25)
+        
         
     def attack():
-        pass
-
-    def take_damage():
         pass
     
     def update(self):
@@ -83,16 +93,20 @@ class Processor(Enemy):
         # Resize velocity vector so that it does not exceed max_speed when diagonal
         if self.vel.length() > self.max_speed:
             self.vel.scale_to_length(self.max_speed)
+        
+        self.hitbox.center = self.pos
+            
 
     def draw(self,surface):
         rect = self.image.get_rect(center=self.pos)
         surface.blit(self.image, rect)
+        # pygame.draw.rect(surface,RED, self.hitbox)
 
 
 class PauseScreen():
     def __init__(self):
         self.colour = PAUSE_BLACK
-        self.rect = pygame.Rect(0,0,ARENA_BOUNDARY_WIDTH, ARENA_BOUNDARY_HEIGHT)
+        self.rect = pygame.Rect(0,0,ARENA_BOUNDARY_WIDTH, HEIGHT)
         self.temp_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
 
     def draw(self,surface):
@@ -169,7 +183,7 @@ class UpgradeScreen(Entity):
         self.player.shot_delay -= 50
 
     def upgrade_shot_damage(self):
-        self.player.shot_damage *= 1.2
+        self.player.shot_damage += 10
     
     def upgrade_max_speed(self):
         self.player.accel += 0.05
@@ -234,15 +248,15 @@ class UpgradeScreen(Entity):
 
         
 
-class LevelBar(Entity):
-    def __init__(self):
-        self.bg_colour = MENU_GREY
+# class LevelBar(Entity):
+#     def __init__(self):
+#         self.bg_colour = MENU_GREY
 
-    def update(self):
-        pass
+#     def update(self):
+#         pass
 
-    def draw(self, surface):
-        pygame.draw.rect(surface, self.bg_colour, (0,ARENA_BOUNDARY_HEIGHT, ARENA_BOUNDARY_WIDTH, HEIGHT-ARENA_BOUNDARY_HEIGHT))
+#     def draw(self, surface):
+#         pygame.draw.rect(surface, self.bg_colour, (0,ARENA_BOUNDARY_HEIGHT, ARENA_BOUNDARY_WIDTH, HEIGHT-ARENA_BOUNDARY_HEIGHT))
 
 
 
@@ -258,27 +272,35 @@ class Bullet(Entity):
     def update(self):
         self.pos += self.vel
     
+    def collide(self):
+        for enemy in GLOBAL_ENEMY_POS:
+            if GLOBAL_ENEMY_POS[enemy].collidepoint(self.pos):
+                enemy.health -= self.shot_damage
+                return True
+    
     def draw(self, surface):
         pygame.draw.circle(surface, self.colour, self.pos, self.radius)
     
     def off_screen(self):
         return (self.pos.x < 0 or self.pos.x > ARENA_BOUNDARY_WIDTH-self.speed or 
-                self.pos.y < 0 or self.pos.y > ARENA_BOUNDARY_HEIGHT-self.speed)
+                self.pos.y < 0 or self.pos.y > HEIGHT)
 
 
 class Player(Entity):
-    def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, 
+    def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, health=50, 
                  shot_amount=0, bullet_speed=7, shot_delay=400, shot_damage=10, max_speed=6,defence=5):
         self.radius = radius
         self.fill = PLAYER_BLUE
         self.outline = BLACK
         self.thickness = thickness
         self.level = level   # Determine what this is used for
-        
+        self.health = health
+
         # Movement parameters
         # We have velocity, not just speed. This is to ensure smooth sliding movement!
         self.vel = pygame.Vector2(0,0)
         self.pos = pygame.Vector2(WIDTH//2, HEIGHT//2)
+        self.hitbox = pygame.Rect(0, 0, 20, 20)
         self.accel = accel
         self.friction = friction
 
@@ -308,6 +330,7 @@ class Player(Entity):
         self.cannon_image = pygame.transform.scale(self.cannon_image, self.cannon_size)
 
     def update(self):
+
         # CONTROL MOVEMENT ==========================================
         keys = pygame.key.get_pressed()
         if keys[pygame.K_a]:
@@ -331,13 +354,16 @@ class Player(Entity):
         # Inner min ensures x/y position does not go beyond one end of screen
         # Outer max ensures x/y position does not go beyond the other end of screen
         self.pos.x = max(self.radius, min(ARENA_BOUNDARY_WIDTH - self.radius, self.pos.x))
-        self.pos.y = max(self.radius, min(ARENA_BOUNDARY_HEIGHT - self.radius, self.pos.y))
+        self.pos.y = max(self.radius, min(HEIGHT - self.radius, self.pos.y))
 
         # CONTROL AIMING =====================================================
         mouse_pos = pygame.mouse.get_pos()
         direction = pygame.Vector2(mouse_pos) - self.pos
         self.angle = math.atan2(direction.y, direction.x)      # Mouse angle in radians
-    
+        
+        # Update hitbox
+        self.hitbox.center = self.pos
+
     def shoot(self):
         bullets = []
         current_time = pygame.time.get_ticks()
@@ -383,6 +409,9 @@ class Player(Entity):
         pygame.draw.circle(surface, self.fill, self.pos, self.radius)
         pygame.draw.circle(surface, self.outline, self.pos, self.radius, self.thickness)
 
+        # Draw hitbox
+        # pygame.draw.rect(surface, RED, self.hitbox)
+
 
 # DRIVER CODE ============================================================
 
@@ -390,11 +419,17 @@ def main():
     clock = pygame.time.Clock()
     player = Player()
     upgrade_screen = UpgradeScreen(player=player)
-    level_bar = LevelBar()
+    # level_bar = LevelBar()
     pause_screen = PauseScreen()
-    processor = Processor(pos=(0,0), health=50, player=player)
-    entities = [player,upgrade_screen,level_bar,processor]
+    entities = [player,upgrade_screen]
 
+    spawn_loc = [(0,0), (ARENA_BOUNDARY_WIDTH,0), (0,HEIGHT), (ARENA_BOUNDARY_WIDTH,HEIGHT)]
+    # spawn_loc = [(0,0)]
+    for loc in spawn_loc:
+        processor = Processor(pos=loc, health=20, player=player)
+        entities.append(processor)
+        GLOBAL_ENEMY_POS[processor] = loc
+    
     # GAME LOOP ================================
     running = True
     while running:
@@ -430,13 +465,22 @@ def main():
             # DRAWING AND UPDATING ALL ENTITIES ==========================================
             screen.fill(WHITE)
             for entity in entities[:]:   # Entities[:] is a shallow copy, because entities is already being consistently updated above
-                                        # Without this, bullets lag a bit
+                                         # Without this, bullets lag a bit
                 entity.draw(screen)
                 entity.update()
 
                 # Remove bullet from entity list if it is off screen to conserve memory 
-                if isinstance(entity, Bullet) and entity.off_screen():
-                    entities.remove(entity)
+                if isinstance(entity, Bullet):
+                    if entity.off_screen() or entity.collide():
+                        entities.remove(entity)
+
+                # Update positions for all enemies, for bullet collision
+                if isinstance(entity, Enemy):
+                    GLOBAL_ENEMY_POS[entity] = entity.hitbox
+                    if entity.check_death() or entity.collide():
+                        entities.remove(entity)
+                        GLOBAL_ENEMY_POS.pop(entity)
+                
             
         pygame.display.flip() 
 
