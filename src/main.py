@@ -9,7 +9,6 @@ RED = (255,0,0)
 GREEN = (0,255,0)
 YELLOW = (255,255,0)
 MENU_GREY = (145, 145, 145)
-HEALTHBAR_GREY = (67,67,67)
 PAUSE_BLACK = (0, 0, 0, 175)
 BLACK = (0,0,0)
 PLAYER_BLUE = (0, 110, 255)
@@ -29,8 +28,8 @@ pygame.display.set_caption("Dieflow")
 
 # CLASSES ===============================================================
 
-# TODO: Maybe health indicator for enemy
-# TODO: Make a new shooting enemy, with unique bullets 
+# TODO: Make the enemy and enemy bullets rotate depending on direction.
+
 # TODO: Determine level indicators, and enemy wave spawning system
 
 class Entity():
@@ -44,7 +43,7 @@ class Entity():
 
 
 class Enemy(Entity):
-    def __init__(self,player, pos, accel, friction, max_speed, health, damage, image):
+    def __init__(self,player, pos, accel, friction, max_speed, player_knockback, health, damage, image):
         self.player = player
 
         self.vel = pygame.Vector2(0,0)
@@ -52,6 +51,8 @@ class Enemy(Entity):
         self.accel = accel
         self.friction = friction
         self.max_speed = max_speed
+        
+        self.player_knockback = player_knockback
 
         self.health = health
         self.damage = damage
@@ -59,10 +60,32 @@ class Enemy(Entity):
         self.image = pygame.transform.scale(self.image, (25,25))
         
     def collide(self):
+        # Do knockback / offset on each other so they do not overlap
+        for enemy in GLOBAL_ENEMY_POS:
+            if self.hitbox != enemy.hitbox and self.hitbox.colliderect(enemy.hitbox):
+                offset = self.pos - enemy.pos
+                if offset.length() > 0:
+                    offset = offset.normalize()
+                self.vel += offset * 2
+
         if self.player.hitbox.colliderect(self.hitbox):
             self.player.health -= self.damage
+            self.player.vel += self.player_knockback * self.vel   # This is genuinely the most beautiful knockback ever
             return True
     
+    def movement_maintenance(self):
+        self.vel *= self.friction
+        self.pos += self.vel
+
+        # Resize velocity vector so that it does not exceed max_speed when diagonal
+        if self.vel.length() > self.max_speed:
+            self.vel.scale_to_length(self.max_speed)
+        
+        self.hitbox.center = self.pos
+
+        self.pos.x = max(12.5, min(ARENA_BOUNDARY_WIDTH - 12.5, self.pos.x))
+        self.pos.y = max(12.5, min(HEIGHT - 12.5, self.pos.y))
+
     @abstractmethod
     def attack(self):
         pass    
@@ -73,16 +96,18 @@ class Enemy(Entity):
     def check_death(self):
         if self.health <= 0:
             return True
+    
+    def draw(self,surface):
+        rect = self.image.get_rect(center=self.pos)
+        surface.blit(self.image, rect)
 
 
-class Processor(Enemy):
+class Square(Enemy):
     # Inherit these parameters from Enemy
-    def __init__(self, player, pos, accel=0.2, friction=0.9, max_speed=1.5, health=20, damage=5, image="square.png"):
-        super().__init__(player, pos, accel, friction, max_speed, health, damage, image)
+    def __init__(self, player, pos, accel=0.2, friction=0.9, max_speed=1.5, player_knockback=5, health=20, damage=5, image="square.png"):
+        super().__init__(player, pos, accel, friction, max_speed, player_knockback, health, damage, image)
         self.hitbox = pygame.Rect(self.pos[0], self.pos[1], 25, 25)
           
-    def attack(self):
-        pass
     
     def update(self):
         # Get the direction aiming at the player
@@ -91,19 +116,26 @@ class Processor(Enemy):
         
         # Similar movement processing like the Player class
         self.vel += direction * self.accel
-        self.vel *= self.friction
-        self.pos += self.vel
-
-        # Resize velocity vector so that it does not exceed max_speed when diagonal
-        if self.vel.length() > self.max_speed:
-            self.vel.scale_to_length(self.max_speed)
         
-        self.hitbox.center = self.pos
-            
+        self.movement_maintenance()
+ 
 
-    def draw(self,surface):
-        rect = self.image.get_rect(center=self.pos)
-        surface.blit(self.image, rect)
+class Dome(Enemy):
+    # Inherit these parameters from Enemy
+    def __init__(self, player, pos, accel=1, friction=0.9, max_speed=2, player_knockback=5, health=40, damage=5, image="dome.png"):
+        super().__init__(player, pos, accel, friction, max_speed, player_knockback, health, damage, image)
+        self.hitbox = pygame.Rect(self.pos[0], self.pos[1], 25, 25)
+    
+    def update(self):
+        # Get the direction aiming at the player
+        direction = self.player.pos - self.pos
+        direction = direction.normalize()     # Makes direction magnitude 1, this is for consistent velocity 
+        
+        # Gets the perpendicular vector, this makes it spin around
+        orbit = pygame.Vector2(-direction.y, direction.x)
+        self.vel += orbit * self.accel
+        
+        self.movement_maintenance()
 
 
 class PauseScreen():
@@ -290,11 +322,11 @@ class HealthBar():
             self.colour = RED
     
     def draw(self, surface):
-        pygame.draw.rect(surface, HEALTHBAR_GREY, self.health_bar_frame)
+        pygame.draw.rect(surface, BLACK, self.health_bar_frame)
         pygame.draw.rect(surface, self.colour, self.health_bar_content)
 
 
-class Bullet(Entity):
+class PlayerBullet(Entity):
     def __init__(self, pos, direction, speed, shot_damage, radius=5, colour=BLACK):
         self.pos = pygame.Vector2(pos)
         self.speed = speed
@@ -319,6 +351,20 @@ class Bullet(Entity):
         return (self.pos.x < 0 or self.pos.x > ARENA_BOUNDARY_WIDTH-self.speed or 
                 self.pos.y < 0 or self.pos.y > HEIGHT)
 
+class EnemyBullet(PlayerBullet):
+    def __init__(self, pos, direction, speed, shot_damage, image_path="arrow.png"):
+        super().__init__(pos, direction, speed, shot_damage)
+        self.image = pygame.image.load(path+image_path).convert_alpha()
+        self.image = pygame.transform.scale(self.image, (15, 15))
+
+        self.rect = self.image.get_rect(center=self.pos)
+
+    def update(self):
+        super().update()    # Keep PlayerBullet movement
+        self.rect.center = (self.pos.x, self.pos.y)   # Update rect position to follow pos
+    
+    def draw(self, surface):
+        surface.blit(self.image, self.rect)
 
 class Player(Entity):
     def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, health=50, heal_delay=2000, heal_per_sec=10,
@@ -418,18 +464,18 @@ class Player(Entity):
             dir_vector_1 = pygame.Vector2(math.cos(self.angle), math.sin(self.angle))
             dir_vector_2 = pygame.Vector2(math.cos(self.angle+0.05), math.sin(self.angle+0.05))
             dir_vector_3 = pygame.Vector2(math.cos(self.angle-0.05), math.sin(self.angle-0.05))
-            bullet_pos = self.pos + dir_vector_1 * self.cannon_size[0]//2
+            bullet_pos = self.pos + dir_vector_1 * self.cannon_size[0]
 
             # Instantiate a bullet depending on level of shot amount skill
             if self.shot_amount == 0:
-                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage)) 
+                bullets.append(PlayerBullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage)) 
             if self.shot_amount == 1:
-                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage))
-                bullets.append(Bullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage)) 
+                bullets.append(PlayerBullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage))
+                bullets.append(PlayerBullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage)) 
             if self.shot_amount == 2:
-                bullets.append(Bullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage)) 
-                bullets.append(Bullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage)) 
-                bullets.append(Bullet(bullet_pos, dir_vector_3, self.bullet_speed, self.shot_damage)) 
+                bullets.append(PlayerBullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage)) 
+                bullets.append(PlayerBullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage)) 
+                bullets.append(PlayerBullet(bullet_pos, dir_vector_3, self.bullet_speed, self.shot_damage)) 
         
             return bullets
         
@@ -467,11 +513,17 @@ def main():
     pause_screen = PauseScreen()
     entities = [player,upgrade_screen]
 
-    spawn_loc = [(0,0), (ARENA_BOUNDARY_WIDTH,0), (0,HEIGHT), (ARENA_BOUNDARY_WIDTH,HEIGHT)]
+    # spawn_loc = [(0,0), (ARENA_BOUNDARY_WIDTH,0), (0,HEIGHT), (ARENA_BOUNDARY_WIDTH,HEIGHT)]
+    # for loc in spawn_loc:
+    #     square = Square(pos=loc, health=20, player=player)
+    #     entities.append(square)
+    #     GLOBAL_ENEMY_POS[square] = loc
+
+    spawn_loc = [(0,0), (200,0), (0,200), (200,200)]
     for loc in spawn_loc:
-        processor = Processor(pos=loc, health=20, player=player)
-        entities.append(processor)
-        GLOBAL_ENEMY_POS[processor] = loc
+        dome = Dome(pos=loc, health=20, player=player)
+        entities.append(dome)
+        GLOBAL_ENEMY_POS[dome] = loc
     
     # GAME LOOP ================================
     running = True
@@ -512,12 +564,12 @@ def main():
                 entity.draw(screen)
                 entity.update()
 
-                # Remove bullet from entity list if it is off screen to conserve memory 
-                if isinstance(entity, Bullet):
+                # Remove player bullet from entity list if it is off screen to conserve memory 
+                if isinstance(entity, PlayerBullet):
                     if entity.off_screen() or entity.collide():
                         entities.remove(entity)
 
-                # Update positions for all enemies, for bullet collision
+                # Update positions for all enemies in the global position dictionary for collision checking
                 if isinstance(entity, Enemy):
                     GLOBAL_ENEMY_POS[entity] = entity.hitbox
                     if entity.check_death() or entity.collide():
