@@ -1,4 +1,5 @@
 import pygame
+import random
 import math
 from abc import ABC, abstractmethod
 
@@ -41,10 +42,26 @@ class Entity():
     def draw():
         pass
 
+class Screen():
+    def __init__(self, bg_colour, rect):
+        self.bg_colour = bg_colour
+        self.rect = rect
+
+        # Temp surface is created so the screen can have a slight transparent opacity
+        self.temp_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+    
+    def show_text(self, surface, size, text, colour, pos):
+        font = pygame.font.Font(None, size)
+        text_surface = font.render(text, True, colour)
+        surface.blit(text_surface, pos)
+
+    def draw(self,surface):
+        pygame.draw.rect(self.temp_surface, self.bg_colour, self.rect)
+        surface.blit(self.temp_surface,self.rect)
+        
 
 class Enemy(Entity):
-    def __init__(self,player, pos, accel, friction, max_speed, player_knockback, health, damage, image):
-        self.player = player
+    def __init__(self, pos, accel, friction, max_speed, player_knockback, health, damage, image):
 
         self.vel = pygame.Vector2(0,0)
         self.pos = pos
@@ -68,12 +85,12 @@ class Enemy(Entity):
                     offset = offset.normalize()
                 self.vel += offset * 2
 
-        if self.player.hitbox.colliderect(self.hitbox):
-            self.player.health -= self.damage
-            self.player.vel += self.player_knockback * self.vel   # This is genuinely the most beautiful knockback ever
+        if player.hitbox.colliderect(self.hitbox):
+            player.health -= self.damage
+            player.vel += self.player_knockback * self.vel   # This is genuinely the most beautiful knockback ever
             return True
     
-    def movement_maintenance(self):
+    def movement_maintenance(self):  # These are common functions to maintain when enemy entities move
         self.vel *= self.friction
         self.pos += self.vel
 
@@ -85,10 +102,6 @@ class Enemy(Entity):
 
         self.pos.x = max(12.5, min(ARENA_BOUNDARY_WIDTH - 12.5, self.pos.x))
         self.pos.y = max(12.5, min(HEIGHT - 12.5, self.pos.y))
-
-    @abstractmethod
-    def attack(self):
-        pass    
 
     def take_damage(self,damage):
         self.health -= damage
@@ -104,14 +117,14 @@ class Enemy(Entity):
 
 class Square(Enemy):
     # Inherit these parameters from Enemy
-    def __init__(self, player, pos, accel=0.2, friction=0.9, max_speed=1.5, player_knockback=5, health=20, damage=5, image="square.png"):
-        super().__init__(player, pos, accel, friction, max_speed, player_knockback, health, damage, image)
+    def __init__(self, pos, accel=0.2, friction=0.9, max_speed=1.5, player_knockback=5, health=20, damage=5, image="square.png"):
+        super().__init__(pos, accel, friction, max_speed, player_knockback, health, damage, image)
         self.hitbox = pygame.Rect(self.pos[0], self.pos[1], 25, 25)
           
     
     def update(self):
         # Get the direction aiming at the player
-        direction = self.player.pos - self.pos
+        direction = player.pos - self.pos
         direction = direction.normalize()     # Makes direction magnitude 1, this is for consistent velocity 
         
         # Similar movement processing like the Player class
@@ -122,42 +135,64 @@ class Square(Enemy):
 
 class Dome(Enemy):
     # Inherit these parameters from Enemy
-    def __init__(self, player, pos, accel=1, friction=0.9, max_speed=2, player_knockback=5, health=40, damage=5, image="dome.png"):
-        super().__init__(player, pos, accel, friction, max_speed, player_knockback, health, damage, image)
+    def __init__(self, pos, accel=1, friction=0.9, max_speed=2, player_knockback=5, health=40, damage=20, image="dome.png", 
+                 bullet_speed=3):
+        super().__init__(pos, accel, friction, max_speed, player_knockback, health, damage, image)
         self.hitbox = pygame.Rect(self.pos[0], self.pos[1], 25, 25)
+        self.bullet_speed = bullet_speed
+        self.shot_damage = damage
+
+        self.angle = 0        
+        self.last_shot_time = 0
+        self.shot_delay = random.randint(1500,2000)
     
+    def shoot(self):
+        current_time = pygame.time.get_ticks()
+
+        if current_time - self.last_shot_time >= self.shot_delay:
+            self.last_shot_time = current_time
+
+            # Get the starting position of the bullet via trigonometry
+            dir_vector = pygame.Vector2(math.cos(self.angle), math.sin(self.angle))
+            bullet_pos = self.pos + dir_vector * 20
+
+            # Instantiate a bullet depending on level of shot amount skill
+            return EnemyBullet(bullet_pos, dir_vector, self.bullet_speed, self.shot_damage)
+        
+
     def update(self):
         # Get the direction aiming at the player
-        direction = self.player.pos - self.pos
+        direction = player.pos - self.pos
         direction = direction.normalize()     # Makes direction magnitude 1, this is for consistent velocity 
-        
+        self.angle = math.atan2(direction.y, direction.x)
+
         # Gets the perpendicular vector, this makes it spin around
         orbit = pygame.Vector2(-direction.y, direction.x)
         self.vel += orbit * self.accel
         
         self.movement_maintenance()
+    
+    def draw(self, surface): # This enemy requires a special rotating body asset
 
+        rotated_body = pygame.transform.rotate(self.image, -math.degrees(self.angle))
+        rotated_rect = rotated_body.get_rect(center=(self.pos[0],self.pos[1]))
 
-class PauseScreen():
-    def __init__(self):
-        self.colour = PAUSE_BLACK
-        self.rect = pygame.Rect(0,0,ARENA_BOUNDARY_WIDTH, HEIGHT)
+        # Blit the rotated cannon on screen
+        surface.blit(rotated_body, rotated_rect)
 
-        # Temp surface is created so the screen can have a slight transparent opacity
-        self.temp_surface = pygame.Surface(self.rect.size, pygame.SRCALPHA)
-
+class PauseScreen(Screen):
+    def __init__(self, bg_colour=PAUSE_BLACK, rect=pygame.Rect(0,0,ARENA_BOUNDARY_WIDTH, HEIGHT)):
+        super().__init__(bg_colour, rect)
+    
     def draw(self,surface):
-        pygame.draw.rect(self.temp_surface, self.colour, self.rect)
-        surface.blit(self.temp_surface,self.rect)
+        super().draw(surface)
+        self.show_text(surface, 100, "PAUSED", WHITE, (210,240))
 
-        # Put "paused" text on top
-        font = pygame.font.Font(None, 100)
-        text_surface = font.render("PAUSED", True, (255,255,255))
-        surface.blit(text_surface, (210,220))
+
 
 
 class UpgradeScreen(Entity):
-    def __init__(self, player, points=30):
+    def __init__(self, points=30):
         ARENA_WIDTH = WIDTH-ARENA_BOUNDARY_WIDTH
         self.arena_area = pygame.Rect(ARENA_BOUNDARY_WIDTH, 0, ARENA_WIDTH, HEIGHT)
 
@@ -166,7 +201,6 @@ class UpgradeScreen(Entity):
         self.upgrade_levels_image = pygame.image.load(path+"numbers.png").convert_alpha()
         self.points = points
 
-        self.player = player
         self.shot_amount_pos = pygame.Rect(707,154,32,32)
         self.bullet_speed_pos = pygame.Rect(707,218,32,32)
         self.shot_delay_pos = pygame.Rect(707,282,32,32)
@@ -212,23 +246,23 @@ class UpgradeScreen(Entity):
 
     # Some arbitrary values for placeholder, not in use rn
     def upgrade_shot_amount(self):
-        self.player.shot_amount = self.buttons["SHOT AMOUNT"][0]
+        player.shot_amount = self.buttons["SHOT AMOUNT"][0]
     
     def upgrade_bullet_speed(self):
-        self.player.bullet_speed += 2
+        player.bullet_speed += 2
 
     def upgrade_shot_delay(self):
-        self.player.shot_delay -= 50
+        player.shot_delay -= 50
 
     def upgrade_shot_damage(self):
-        self.player.shot_damage += 10
+        player.shot_damage += 10
     
     def upgrade_max_speed(self):
-        self.player.accel += 0.05
-        self.player.max_speed += 2
+        player.accel += 0.05
+        player.max_speed += 2
         
     def upgrade_defence(self):
-        self.player.defence += 5
+        player.defence += 5
 
     # Empty, since the upgrade screen doesn't really move and respond to inputs other than mouse
     def update(self):
@@ -351,20 +385,32 @@ class PlayerBullet(Entity):
         return (self.pos.x < 0 or self.pos.x > ARENA_BOUNDARY_WIDTH-self.speed or 
                 self.pos.y < 0 or self.pos.y > HEIGHT)
 
+
 class EnemyBullet(PlayerBullet):
     def __init__(self, pos, direction, speed, shot_damage, image_path="arrow.png"):
         super().__init__(pos, direction, speed, shot_damage)
         self.image = pygame.image.load(path+image_path).convert_alpha()
         self.image = pygame.transform.scale(self.image, (15, 15))
-
-        self.rect = self.image.get_rect(center=self.pos)
+        
+        self.angle = math.atan2(direction.y, direction.x)  
+        self.rect = self.image.get_rect(center=self.pos)  # This is the rect surface it is drawn on
 
     def update(self):
         super().update()    # Keep PlayerBullet movement
-        self.rect.center = (self.pos.x, self.pos.y)   # Update rect position to follow pos
+        self.rect.center = (self.pos.x, self.pos.y)   # Update rect position to follow position of bullet
     
+    def collide(self):
+        if player.hitbox.collidepoint(self.pos):
+            player.health -= self.shot_damage
+            return True
+
     def draw(self, surface):
-        surface.blit(self.image, self.rect)
+        # Rotate the bullet based on shooting direction
+        rotated_bullet = pygame.transform.rotate(self.image, -math.degrees(self.angle))
+
+        # Blit the rotated cannon on screen
+        rotated_rect = rotated_bullet.get_rect(center=self.rect.center)
+        surface.blit(rotated_bullet, rotated_rect)
 
 class Player(Entity):
     def __init__(self, radius=10, thickness=1, accel=0.5, friction=0.9, level=1, health=50, heal_delay=2000, heal_per_sec=10,
@@ -470,8 +516,8 @@ class Player(Entity):
             if self.shot_amount == 0:
                 bullets.append(PlayerBullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage)) 
             if self.shot_amount == 1:
-                bullets.append(PlayerBullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage))
-                bullets.append(PlayerBullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage)) 
+                bullets.append(PlayerBullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage))
+                bullets.append(PlayerBullet(bullet_pos, dir_vector_3, self.bullet_speed, self.shot_damage)) 
             if self.shot_amount == 2:
                 bullets.append(PlayerBullet(bullet_pos, dir_vector_1, self.bullet_speed, self.shot_damage)) 
                 bullets.append(PlayerBullet(bullet_pos, dir_vector_2, self.bullet_speed, self.shot_damage)) 
@@ -479,7 +525,6 @@ class Player(Entity):
         
             return bullets
         
-
     def draw(self, surface):
         self.cannonManage()
 
@@ -502,29 +547,39 @@ class Player(Entity):
         # Draw hitbox
         # pygame.draw.rect(surface, RED, self.hitbox)
 
+    def checkDeath(self):
+        if self.health <= 0:
+            return True
+
+# Player is global so all objects can access its properties
+player = Player()
 
 # DRIVER CODE ============================================================
 
 def main():
     clock = pygame.time.Clock()
-    player = Player()
-    upgrade_screen = UpgradeScreen(player=player)
+    
+    upgrade_screen = UpgradeScreen()
     # level_bar = LevelBar()
     pause_screen = PauseScreen()
     entities = [player,upgrade_screen]
 
     # spawn_loc = [(0,0), (ARENA_BOUNDARY_WIDTH,0), (0,HEIGHT), (ARENA_BOUNDARY_WIDTH,HEIGHT)]
     # for loc in spawn_loc:
-    #     square = Square(pos=loc, health=20, player=player)
+    #     square = Square(pos=loc, health=20)
     #     entities.append(square)
     #     GLOBAL_ENEMY_POS[square] = loc
-
+    
     spawn_loc = [(0,0), (200,0), (0,200), (200,200)]
     for loc in spawn_loc:
-        dome = Dome(pos=loc, health=20, player=player)
+        dome = Dome(pos=loc, health=20)
         entities.append(dome)
         GLOBAL_ENEMY_POS[dome] = loc
     
+    # dome = Dome(pos=(0,0), health=20, player=player)
+    # entities.append(dome)
+    # GLOBAL_ENEMY_POS[dome] = (0,0)
+
     # GAME LOOP ================================
     running = True
     while running:
@@ -551,18 +606,27 @@ def main():
             pause_screen.draw(screen)
 
         else:
+            # CHECK DEATH =========================
+            if player.checkDeath():
+                print("dead")
+
             # SHOOTING MECHANIC ===============================================
             if mouse_buttons[0]:
                 bullets = player.shoot()
                 if bullets:    # Verifying whether list is empty to reduce unnecessary processing when added to entities list
                     entities.extend(bullets)
-            
+
             # DRAWING AND UPDATING ALL ENTITIES ==========================================
             screen.fill(WHITE)
             for entity in entities[:]:   # Entities[:] is a shallow copy, because entities is already being consistently updated above
                                          # Without this, bullets lag a bit
                 entity.draw(screen)
                 entity.update()
+
+                if isinstance(entity, Dome):
+                    dome_bullet = entity.shoot()
+                    if dome_bullet:
+                        entities.append(dome_bullet)
 
                 # Remove player bullet from entity list if it is off screen to conserve memory 
                 if isinstance(entity, PlayerBullet):
